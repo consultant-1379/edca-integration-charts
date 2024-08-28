@@ -1,0 +1,32 @@
+kubernetes:
+  namespace:
+  - name: fem2s11-edca-integration-staging-precodereview  # namespace name
+    services: # add service label name as list
+    - service: eric-oss-dmaap
+      testcase: "EDCA Integration Test Case to check eric-oss-dmaap service"
+    - service: eric-log-transformer
+      testcase: "EDCA Integration Test Case to check eric-log-transformer"
+    pods:  # add pod details as dict with pod label name as (name) and replicas as (replica-count) 
+    - name: eric-oss-dmaap-kafka
+      replica-count : 3
+      testcase: "EDCA Integration Test Case to check pod eric-oss-dmaap-kafka pod with replic"
+    - name: eric-oss-dmaap-0
+      replica-count : 1
+      testcase: "EDCA Integration Test Case to check pod eric-oss-dmaap-0 pod with replic"
+    cronjobs: # add cronjob label name as list
+    - cronjob: eric-data-search-engine-curator
+      testcase: "EDCA Integration Test Case to check cronjob eric-data-search-engine-curator"
+    jobs:  # add job label name as list
+    - job: eric-edca-integration-helm
+      testcase: "EDCA Integration Test Case to check job eric-data-search-engine-curator"
+    deployments: # add deployment details as dict with deployment label name as (name) and replicas 
+    - name : eric-data-search-engine
+      replicas: 1
+      testcase: "EDCA Integration Test Case to check deployment eric-data-search-engine"
+    - name : eric-data-object-storage-mn
+      replicas : 1
+      testcase: "EDCA Integration Test Case to check deployment eric-data-object-storage-mn"
+    - name: eric-edca-catalog
+      replicas: 2
+      testcase: "EDCA Integration Test Case to check deployment eric-edca-catalog"
+

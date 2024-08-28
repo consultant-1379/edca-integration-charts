@@ -1,0 +1,34 @@
+#COPYRIGHT Ericsson 2021
+#The copyright to the computer program(s) herein is the property of
+#Ericsson Inc. The programs may be used and/or copied only with written
+#permission from Ericsson Inc. or in accordance with the terms and
+#conditions stipulated in the agreement/contract under which the
+#program(s) have been supplied.
+{{ if .Values.global.networkPolicy.enabled -}}
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ template "eric-edca-integration-helm.name" . }}-eric-idam-database-pg-policy
+  labels:
+  {{- include "eric-edca-integration-helm.kubernetes-io-info" .| nindent 4 }}
+  annotations:
+  {{- include "eric-edca-integration-helm.helm-annotations" .| nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: eric-idam-database-pg
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: eric-sec-access-mgmt
+    - podSelector:
+        matchLabels:
+          app: eric-idam-database-pg
+    - podSelector:
+        matchLabels:
+          app: eric-idam-database-pg-bragent
+    - podSelector:
+        matchLabels:
+          app: eric-pm-server
+{{- end }}

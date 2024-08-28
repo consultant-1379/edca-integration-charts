@@ -1,0 +1,114 @@
+pipeline {
+    agent {
+        node {
+            label 'E2c_Testing_Vapp'
+        }
+    }
+    stages {
+        stage('Prepare') {
+            steps {
+                sh 'uname -a;whoami;echo $PATH;groups'
+                //sh 'git clean -xdff'
+                sh 'git submodule sync'
+                sh 'git submodule update --init --recursive'
+                // Ensure that Bob has all of its dependencies.
+                sh 'bob/bob --help'
+            }
+        }
+        stage('Clean') {
+            steps {
+                sh 'bob/bob clean'
+            }
+        }
+        stage('Init') {
+            steps {
+                sh 'bob/bob init'
+            }
+        }
+       stage('Helm-install') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'
+                sh 'bob/bob helm-install-va'
+              }
+        }
+       stage('Nmap Port Scan') {
+            steps {
+                //lock(resource: null, label: 'bob-ci', quantity: 1, variable: 'system') {
+                withCredentials([string(credentialsId: 'artifactory-api-token-id', variable: 'HELM_TOKEN')]){
+                sh 'echo "System: [$system]"'
+                sh 'echo "Kubeconfig: [$KUBECONFIG]"'
+                sh 'bob/bob -r ruleset2.0.va.yaml nmap-port-scan'
+                archiveArtifacts 'nmap_reports/nmap_report/**.*'
+                    }
+                //}
+            }
+        }
+        stage('ZAP Scan') {
+            steps {
+                    withCredentials([string(credentialsId: 'artifactory-api-token-id', variable: 'HELM_TOKEN')]){
+                        sh 'echo "System: [$system]"'
+                        sh 'echo "Kubeconfig: [$KUBECONFIG]"'
+                        sh 'bob/bob -r ruleset2.0.va.yaml zap-scan'
+                        archiveArtifacts 'zap/reports/**.*'
+                        publishHTML (target: [
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: false,
+                        keepAll: true,
+                        reportDir: 'zap/reports',
+                        reportFiles: 'edca-api.html',
+                        reportName: "ZAP Scanning Report"
+                        ])
+                    }
+            }
+        }
+        stage('Anchore-Trivy-scan') {
+            steps {
+                parallel(
+                    'VA-image-scan-anchore-inline': {
+                        sh 'bob/bob -r ruleset2.0.va.yaml anchore-inline-scan'
+                        archiveArtifacts 'anchore-reports/**.*'
+                    },
+                    'VA-image-scan-trivy-inline': {
+                        sh 'bob/bob -r ruleset2.0.va.yaml trivy-inline-scan'
+                        archiveArtifacts 'build/trivy-reports/**.*'
+                    }
+                )
+            }
+        }
+        stage('Cleanup Anchore/Trivy images') {
+            steps {
+                sh 'bob/bob -r ruleset2.0.va.yaml cleanup-anchore-trivy-images'
+            }
+        }
+        stage('Generate Vulnerability reports') {
+            steps {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                   withCredentials([usernamePassword(credentialsId: 'xray-api-token', usernameVariable: 'XRAY_USER', passwordVariable: 'XRAY_TOKEN')]) {
+                           sh 'bob/bob -r ruleset2.0.va.yaml va-report'
+                           //sh "exit 1"
+                           //archiveArtifacts 'Vulnerability_Report.md'
+                        }
+                   }
+                }
+            }
+        /*stage('Archive artifact.properties') {
+            steps {
+                // Archive artifact.properties so Spinnaker can read the parameters (GERRIT_REFSPEC)
+                archiveArtifacts 'artifact.properties'
+            }
+        }*/
+        stage('Helm Delete') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'                
+              }
+        }
+    }
+    post {
+        always {
+            archiveArtifacts 'Vulnerability_Report.md'
+            cleanWs()
+        }
+    }
+}

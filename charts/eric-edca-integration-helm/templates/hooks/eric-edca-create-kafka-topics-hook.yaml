@@ -1,0 +1,49 @@
+{{- if and .Values.tags.drd -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ template "eric-edca-integration-helm.name" . }}-create-kafka-topics-hook
+  labels:
+    {{- include "eric-edca-integration-helm.kubernetes-io-info" .| nindent 4 }}
+  annotations:
+    {{- include "eric-edca-integration-helm.helm-annotations" .| nindent 4 }}
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      restartPolicy: Never
+      {{- if include "eric-edca-integration-helm.pullSecret" . }}
+      imagePullSecrets:
+        - name: {{ template "eric-edca-integration-helm.pullSecret" . }}
+      {{- end }}
+      containers:
+        - name: kafka-client
+          image: "{{ template "eric-edca-integration-helm.kafka-client.registryUrl" . }}/{{ index .Values "imageCredentials" "kafka-client" "repoPath" }}/{{ index .Values "images" "kafka-client" "name" }}:{{ index .Values "images" "kafka-client" "tag" }}"
+          imagePullPolicy: {{ .Values.global.registry.imagePullPolicy | quote }}
+          command:
+          - sh
+          - -exec
+          - |
+            cd /opt/kafka/bin;
+            sleep 60;
+            {{- $root := . }}
+            {{ range $topic := .Values.kafkaClient.topics }}
+            # Create topic {{ $topic.name }} with specified partitions and specified replication factor
+            kafka-topics.sh --zookeeper {{ template "eric-edca-integration-helm.kafkaClient.connect" $root }} --create --topic {{ $topic.name }} --replication-factor {{ $topic.replicationFactor }} --partitions {{ $topic.partitions }}  --if-not-exists
+            {{- if $topic.configs }}
+            # Modify configuration parameters of topic {{ $topic.name }}
+            kafka-configs.sh  --alter --entity-type topics --entity-name {{ $topic.name }}  --zookeeper {{ template "eric-edca-integration-helm.kafkaClient.connect" $root }} --add-config {{ print " " }}
+            {{- range $config, $value := $topic.configs -}}
+              {{ printf "%s=%s," $config ($value | toString) }}
+            {{- end }}
+            {{- end }}
+            sleep 5
+            # Show configuration for topic {{ $topic.name }}
+            kafka-topics.sh --zookeeper {{ template "eric-edca-integration-helm.kafkaClient.connect" $root }} --describe --topic {{ $topic.name }}
+           {{ end }}
+{{- end -}}

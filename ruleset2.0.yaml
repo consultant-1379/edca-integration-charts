@@ -1,0 +1,204 @@
+modelVersion: 2.0
+
+description: "EDCA Integration CI"
+
+docker-images:
+  - adp-helm-dr-check: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/common-library-adp-helm-dr-check:latest
+  - doc-builder: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-docbuilder:41a32e6
+  - k8-test: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-py3kubehelmbuilder:latest
+  - adp-release-auto: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-adp-release-auto:latest
+  - java11-maven-builder: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-java11mvnbuilder:latest
+  - maven-builder: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/bob-javamvnbuilder.minideb:latest
+
+# List of constants
+properties:
+  - csar-package-manager: armdocker.rnd.ericsson.se/proj-am/releases/eric-am-package-manager:latest
+  - helm-chart-name: eric-edca-integration-helm
+  - helm-chart-repo: https://arm.sero.gic.ericsson.se/artifactory/proj-edca-ci-internal-helm/
+  - image-registry: armdocker.rnd.ericsson.se
+  - helm-chart-file-name: ${helm-chart-name}-${var.version}.tgz
+  - git-user: lciadm100
+  - git-repo-path: ADP-huboss/Microservices/edca-integration-charts
+  - git-repo-url: ssh://${git-user}@gerrit.ericsson.se:29418/${git-repo-path}
+  - git-repo: https://gerrit.ericsson.se/#/admin/projects/${git-repo-path}
+
+# Import environment variables (e.g. gitlab runner parameters)
+env:
+ - PWD
+ - HOME
+ - USER
+ - RELEASE (default=false)
+ - KUBECONFIG (default=/tmp/admin.conf)
+ - DOCKER_USERNAME
+ - DOCKER_PASSWORD
+ - GERRIT_CHANGE_NUMBER
+ - HELM_TOKEN
+ - HELM_USER (default=enmadm100)
+ - ENABLE_HELM_V3 (default=true)
+ - JENKINS_URL (default="https://fem2s11-eiffel004.eiffel.gic.ericsson.se:8443/jenkins/")
+ - JOB_NAME (default="edca-integraton-cicd")
+
+# Variables, set by below tasks
+var:
+ - version
+ - commithash
+ - fem-number
+ - cicd-namespace
+ - csar-chart-version
+ - upgrade-chart-version
+
+ 
+# Rules to execute
+rules:
+
+  # Clean workspace
+  clean:
+    - task: rm
+      cmd:
+        - rm -rf .bob/
+        - rm -rf build/
+
+  # Initialize, generate version and read commit has
+  init:
+    - task: version
+      docker-image: adp-release-auto
+      cmd: generate-version --is-release ${env.RELEASE} --output version
+    - task: commit
+      docker-image: adp-release-auto
+      cmd: git rev-parse --short HEAD > .bob/var.commithash
+    - task: adp-artifacts-properties
+      docker-image: adp-release-auto
+      cmd: generate-adp-artifacts --chart-name ${helm-chart-name} --chart-version ${var.version} --chart-repo ${helm-chart-repo} --image-name ${image-name} --image-version firsttry --image-repo ${image-repo}
+    
+  # Run link to check helm charts
+  lint:
+    - task: helm
+      docker-image: adp-release-auto
+      docker-flags:
+        - --env ENABLE_HELM_V3=true
+      cmd: helm lint charts/${helm-chart-name} --set global.hosts.iam=iamhost
+    - task: helm-chart-check
+      docker-image: adp-helm-dr-check
+      #cmd: helm-dr-check --helm-chart charts/${helm-chart-name} ${skipped-design-rules} --helm-v3 --output .bob/
+      cmd: helm-dr-check --helm-chart -DhelmDesignRule.config.DR-D1124-100=disable charts/${helm-chart-name} --helm-v3 --output .bob/
+
+  # Build a docker image pointing to internal repository
+  image:
+    - task: docker-build-dirty
+      cmd: docker build ${env.PWD}
+        --file Dockerfile
+        --tag ${image-repo-dirty}:${var.version}
+        --build-arg REPOSITORY=${git-repo}
+        --build-arg COMMIT=${var.commithash}
+        --build-arg APP_VERSION=${var.version}
+
+  #Delete previously created name space for CICD
+  delete-namespace:
+    - task: set-var
+      cmd:
+        - echo ${env.JENKINS_URL} | cut -f3 -d'/' |cut -f1 -d'-' > .bob/var.fem-number
+    - task: set-namespace
+      cmd:
+        - echo ${var.fem-number}-${env.JOB_NAME} | sed s/_/-/g > .bob/var.cicd-namespace  
+    - task: delete-namespace
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - kubectl delete namespace ${var.cicd-namespace}
+
+  # Creating namespace dynamically
+  create-namespace:
+    - task: create-namespace
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - kubectl create namespace ${var.cicd-namespace}
+
+  # Install EDCA Integration helm chart
+  helm-install:
+    - task: helm-install
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - kubectl create -f CICD/secret.yaml --namespace ${var.cicd-namespace}
+        - helm install edca-integration .bob/${helm-chart-name}-*.tgz -f CICD/env.yaml --debug --wait --namespace ${var.cicd-namespace}
+
+  # create namespace for custom collector and drg simulator and deploy
+  deploy-cc-drg-simulator:
+    - task: create-cc-drg-namespaces
+      cmd:
+        - kubectl create namespace cc-sim
+        - kubectl create namespace drg-sim
+    - task: deploy-cc-drg-simulator
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - kubectl apply -f ${env.PWD}/EDCA-Test/regression-tests/cc-drg-sim/cc-sim.yaml -n cc-sim
+        - kubectl apply -f ${env.PWD}/EDCA-Test/regression-tests/cc-drg-sim/drg-sim.yaml -n drg-sim
+
+  # Delete the custom collector and drg simulators
+  delete-cc-drg-namespace:
+    - task: delete-cc-drg-namespace
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - kubectl delete ns cc-sim
+        - kubectl delete ns drg-sim
+        
+  helm-upgrade:
+    - task: upgrade-chart-version-prep
+      cmd:
+        - echo /home/lciadm100/jenkins/workspace/edca-integration-staging-publish/.bob/eric-edca-integration-helm-*.tgz | cut -b 100-108 > .bob/var.upgrade-chart-version
+    - task: helm-upgrade
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - kubectl create -f CICD/secret.yaml --namespace ${var.cicd-namespace}
+        - helm install edca-integration https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-edca-drop-helm/eric-edca-integration-helm/eric-edca-integration-helm-1.0.0-760.tgz -f CICD/env.yaml --debug --wait --namespace ${var.cicd-namespace}
+        - helm ls --namespace ${var.cicd-namespace} 
+        - helm history edca-integration --namespace ${var.cicd-namespace}
+        - helm upgrade edca-integration https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-edca-drop-helm/eric-edca-integration-helm/eric-edca-integration-helm-${var.upgrade-chart-version}.tgz -f CICD/env.yaml --debug --wait --namespace ${var.cicd-namespace}
+        - helm ls --namespace ${var.cicd-namespace} 
+        - helm history edca-integration --namespace ${var.cicd-namespace}
+
+  helm-install-va:
+    - task: helm-install-va
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - kubectl create -f CICD/secret.yaml --namespace ${var.cicd-namespace}
+        - helm install edca-integration https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-edca-drop-helm/eric-edca-integration-helm/eric-edca-integration-helm-1.0.0-390.tgz -f CICD/env.yaml --debug --wait --namespace ${var.cicd-namespace}
+        
+  csar-package:
+    - task: csar-chart-version-prep
+      cmd: 
+        - echo /home/lciadm100/jenkins/workspace/edca-integration-staging-publish/.bob/eric-edca-integration-helm-*.tgz | cut -b 100-108 > .bob/var.csar-chart-version   
+    - task: csar-package
+      cmd: docker run --init --rm -w ${env.PWD}
+        -e USER=${env.USER}
+        -v ${env.PWD}:${env.PWD}
+        -v ${env.HOME}/.docker:/root/.docker
+        -v /var/run/docker.sock:/var/run/docker.sock
+        ${csar-package-manager}
+        generate --helm eric-edca-integration-helm-${var.csar-chart-version}.tgz --name eric-edca-${var.csar-chart-version} --helm3

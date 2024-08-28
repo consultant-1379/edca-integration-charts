@@ -1,0 +1,49 @@
+pipeline {
+    agent {
+        node {
+            label 'docker'
+        }
+    }
+    parameters {
+        string(name: 'CHART_NAME', description: 'Chart name e.g.: eric-ms-b')
+        string(name: 'CHART_REPO', description: 'Chart repo e.g.: https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-helm')
+        string(name: 'CHART_VERSION', description: 'Chart version e.g.: 1.0.0-1')
+        string(name: 'INT_CHART_NAME', description: 'Chart name e.g.: eric-ms-b')
+        string(name: 'INT_CHART_REPO', description: 'Chart repo e.g.: https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-helm')
+        string(name: 'INT_CHART_VERSION', description: 'Chart version e.g.: 1.0.0-1')
+        string(name: 'GERRIT_REFSPEC', description: 'Gerrit Refspect of the integration chart git repo e.g.: refs/changes/87/4641487/1')
+    }
+    environment {
+        // SYSTEM can be selected e.g. using Lockable Resources
+        SYSTEM = "kaas001"
+    }
+    stages {
+        stage('Init') {
+            steps {
+                script {
+                    // Generate log url link name and log directory names
+                    def name = CHART_NAME + ': ' + CHART_VERSION
+                    def gerrit_link = null
+                    if (params.GERRIT_REFSPEC != '') {
+                        name = "manual change"
+                        gtokens = params.GERRIT_REFSPEC.split("/")
+                        if (gtokens.length == 5) {
+                            gerrit_link = '<a href="https://gerrit.ericsson.se/#/c/' + gtokens[3] + '/' + gtokens[4] + '">gerrit change: '  + gtokens[3] + ',' + gtokens[4] + '</a>'
+                        }
+                    }
+                    // Setup build info
+                    currentBuild.description = name
+                    if (gerrit_link != null) {
+                        currentBuild.description += '<br>' + gerrit_link
+                    }
+                }
+            }
+        }
+        stage('Test') {
+            steps {
+                // Start e.g. JCAT Test
+                sh "echo run test with $INT_CHART_NAME $INT_CHART_VERSION"
+            }
+        }
+    }
+}

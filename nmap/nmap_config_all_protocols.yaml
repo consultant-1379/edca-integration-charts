@@ -1,0 +1,129 @@
+nmapConfig:
+  services:
+    - name: "eric-edca-catalog"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-data-coordinator-zk"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-data-object-storage-mn"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-data-search-engine-data"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-data-search-engine-master"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-data-visualizer-kb"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-edca-catalog-db"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-eo-api-gateway"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-idam-database-pg"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-log-shipper"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-log-transformer"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-oss-dmaap"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-oss-dmaap-kafka"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+    - name: "eric-pm-server"
+      protocol:
+        - "tcp"
+        - "udp"
+        - "sctp"
+      additionalParams:
+        - "-v"
+        - "-p T:0-65535,U:1-1024,S:1-1024"
+        - "--stats-every 30"
+  reportDir : "nmap_reports"

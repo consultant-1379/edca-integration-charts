@@ -1,0 +1,546 @@
+#COPYRIGHT Ericsson 2021
+#The copyright to the computer program(s) herein is the property of
+#Ericsson Inc. The programs may be used and/or copied only with written
+#permission from Ericsson Inc. or in accordance with the terms and
+#conditions stipulated in the agreement/contract under which the
+#program(s) have been supplied.
+
+# Default values for eric-edca.
+global:
+  registry:
+    url: armdocker.rnd.ericsson.se
+    imagePullPolicy: IfNotPresent
+  pullSecret:
+  security:
+    tls:
+      enabled: false
+  iam:
+    clientId: edca
+    adminSecret: eric-edca-user-creds
+    userKey: kcadminid
+    passwordKey: kcpasswd
+    cacert:
+      secretName: idam-cacert-secret
+      key: ca.crt
+      filePath: iam/ca.crt
+  hosts:
+    pf:
+    iam:
+    vnfm:
+  externalIPv4:
+    enabled: true
+  externalIPv6:
+    enabled: false
+  timezone: UTC
+  networkPolicy:
+    enabled: true
+
+# Additional labels allow a list of key/values to be appended to the list of labels of the resource object.
+labels: {}
+
+images:
+  kafka-client:
+    name: eric-oss-dmaap-kafka
+    tag: 1.0.0-39
+
+imageCredentials:
+  kafka-client:
+    repoPath: proj-orchestration-so
+    registry:
+      url:
+  pullSecret:
+
+tags:
+  pm: true
+  logging: true
+  drd: true
+  catalog: true
+  bdr: true
+  idam: true
+  backup: true
+
+kafkaClient:
+  dataCoordinator:
+    clientServiceName: "eric-data-coordinator-zk"
+    clientPort: "2181"
+  topics:
+    - name: pm-data
+      partitions: 3
+      replicationFactor: 2
+      configs:
+    - name: mixed-data
+      partitions: 3
+      replicationFactor: 2
+      configs:
+
+
+ingress:
+  enabled: true
+  # Mandatory: the ingress hostname to be provided site specific
+  hostname: ""
+  ingressClass:
+  tls:
+    enabled: true
+    # Mandatory: the tls secret to be provided site specific
+    existingSecret: eric-edca-tls-secret
+    passthrough: false
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10G"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "1800"
+
+
+# ADP IAM
+eric-sec-access-mgmt:
+  ingress:
+    enabled: true
+    hostname: ""
+    tls:
+      enabled: true
+      existingSecret: eric-iam-tls-secret
+  persistence:
+    dbVendor: POSTGRES
+    dbName: idam
+    dbHost: eric-idam-database-pg
+    dbsecret: eric-edca-user-creds
+    dbUserkey: pguserid
+    dbPasswdkey: pgpasswd
+  statefulset:
+    tls:
+      enabled: false
+    adminSecret: eric-edca-user-creds
+  service:
+    tls:
+      enabled: false
+
+# IDAM Document database pg
+eric-idam-database-pg:
+  enabled: true
+  brAgent:
+    enabled: true
+  credentials:
+    kubernetesSecretName: eric-edca-user-creds
+    keyForUserId: pguserid
+    keyForUserPw: pgpasswd
+    keyForSuperPw: pgpasswd
+    keyForReplicaId: pguserid
+    keyForReplicaPw: pgpasswd
+    keyForMetricsPw: pgpasswd
+  postgresDatabase: idam
+  postgresConfig:
+    max_prepared_transactions: 100
+  persistentVolumeClaim:
+    enabled: true
+    storageClassName: ""
+    size: 8Gi
+  patroni:
+    logLevel: WARNING
+  authenticationProxy:
+    enabled: false
+
+# API Gateway
+eric-eo-api-gateway:
+  iam:
+    kubernetesSecret: eric-edca-integration-helm-iam-client-secret
+
+# Backup and Restore Orchestrator
+eric-ctrl-bro:
+  persistence:
+    persistentVolumeClaim:
+      size: "20Gi"
+  security:
+    tls:
+      broToAgent:
+        enabled: false
+      rest:
+        enabled: false
+  service:
+    endpoints:
+      broToAgent:
+        tls:
+          enforced: optional
+          verifyClientCertificate: optional
+      restActions:
+        tls:
+          enforced: optional
+
+# Zookeeper
+eric-data-coordinator-zk:
+  persistantVolumeClaim:
+    storageClassName: ""
+    #storageClassName: network-block
+
+# Using DMaap Kafka instead of ADP Kafka
+# Kafka
+#eric-data-message-bus-kf:
+#  persistentVolumeClaim:
+#    enabled: true
+#    storageClassName: network-block
+
+# Document database
+eric-edca-catalog-db:
+  enabled: true
+  brAgent:
+    enabled: true
+  credentials:
+    kubernetesSecretName: "eric-edca-user-creds"
+    keyForUserId: pguserid
+    keyForUserPw: pgpasswd
+    keyForSuperPw: pgpasswd
+    keyForReplicaId: pguserid
+    keyForReplicaPw: pgpasswd
+    keyForMetricsPw: pgpasswd
+  postgresDatabase: catalog
+  persistentVolumeClaim:
+    storageClassName: ""
+
+# Object storage MN
+eric-data-object-storage-mn:
+  enabled: true
+  tls:
+    enabled: false
+  credentials:
+    kubernetesSecretName: eric-edca-integration-helm-object-storage-mn-secret
+  persistentVolumeClaim:
+  # The storage class name for persistent volume,
+    storageClassName: ""
+  # The connectivity of the storage, either local or networked, networked is default
+    storageConnectivity: networked
+  #size of each pvc
+    size: 10Gi
+  #pvc name format: [volumeNamePrefix-]helmRelease-ChartName
+    volumeNamePrefix: export
+  # If subPath is set mount a sub folder of a volume instead of the root of the volume.
+    subPath: ""
+  autoEncryption:
+    enabled: false
+
+  nodeSelector: {}
+  tolerations: []
+# "soft" - It prefers to schedule pods to nodes that satisfy the anti-affinity but will not guarantee.
+# "hard" - Hard requirement that server pods must be scheduled on defferent nodes. The pods won't be scheduled if requirement not fulfilled.
+  affinity:
+    podAntiAffinity: "hard"
+## Object Storage service instance pod
+  server:
+# Configure resource requests and limits
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 500m
+      limits:
+        memory: 1024Mi
+        cpu: 1000m
+  networkPolicy:
+    enabled: false
+    allowExternal: true
+
+  ## Specify the user lifecycle configuration bash shell file when installing.
+  objects_lifecycle_cfg: ""
+  lifecycle:
+  ## Specify the MC default host name, used to add a default MC host in lifecyle job.
+  ## User can change it to the name they perferred.
+    mcHost: "client"
+    configMap: "lifecycle-config"
+
+# PM server
+eric-pm-server:
+  server:
+    baseURL: "metrics/viewer/"
+    prefixURL: "metrics/viewer/"
+    persistentVolume:
+      enabled: true
+  service:
+    endpoints:
+      scrapeTargets:
+        tls:
+          ## If optional both cleartext and TLS targets will be scraped
+          ## If required only TLS targets will be scraped
+          enforced: optional
+      reverseproxy:
+        tls:
+          # Values: optional or required
+          verifyClientCertificate: optional
+  rbac:
+    appMonitoring:
+      enabled: true
+  resources:
+    server:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256M
+
+
+# DMaap Services
+eric-oss-dmaap-kafka:
+  persistantVolumeClaim:
+    storageClassName: ""
+    #storageClassName: network-block
+
+# Catalog Service
+eric-edca-catalog:
+  database:
+    service: eric-edca-catalog-db
+    credentials:
+      kubernetesSecretName: eric-edca-user-creds
+      keyForUserId: pguserid
+      keyForUserPw: pgpasswd
+    schema: "catalog"
+    port: "5432"
+  replicaCount: 2
+  affinity:
+    podAntiAffinity: "soft"
+  service:
+    type: ClusterIP
+    port: 9590
+    shutdown:
+      graceful:
+        timeout: 20
+
+# Logging Services
+eric-data-search-engine:
+  persistence:
+    data:
+      persistentVolumeClaim:
+        size: "30Gi"
+
+eric-data-search-engine-curator:
+  cronjob:
+    curator:
+      schedule: "0 1 * * *"
+      successfulJobHistoryLimit: 1
+      failedJobHistoryLimit: 3
+  actions: |
+    1:
+      action: delete_indices
+      description: Remove logs older than 1 week
+      options:
+        disable_action: false
+        ignore_empty_list: true
+      filters:
+      - filtertype: age
+        source: name
+        direction: older
+        timestring: '%Y.%m.%d'
+        unit: days
+        unit_count: 7
+      - filtertype: space
+        disk_space: 28
+
+eric-log-shipper:
+  additionalVolumes: |
+    - name: docker-containers
+      hostPath:
+        path: /var/lib/docker/containers
+    - name: kubernetes-containers
+      hostPath:
+        path: /var/log/pods
+  additionalVolumeMounts: |
+    - name: docker-containers
+      mountPath: /var/lib/docker/containers
+    - name: kubernetes-containers
+      mountPath: /var/log/pods
+  logshipper:
+    cfgData: ""
+    autodiscover:
+      enabled: true
+      logplane: edca
+      namespace: ".RELEASE.NAMESPACE"
+      exclusions:
+        - field: "kubernetes.container.name"
+          value: "logshipper"
+        - field: "kubernetes.container.name"
+          value: "logtransformer"
+        - field: "kubernetes.container.name"
+          value: "searchengine"
+        - field: "kubernetes.container.name"
+          value: "sysctl"
+        - field: "kubernetes.container.name"
+          value: "curator"
+        - field: "kubernetes.container.name"
+          value: "simple-ericsson-branding-server"
+        - field: "kubernetes.container.name"
+          value: "metrics"
+      templates:
+        - condition.regexp:
+            kubernetes.container.name: '.+'
+          config:
+            - type: docker
+              combine_partial: true
+              cri.parse_flags: true
+              cri.force: true
+              containers.ids:
+                - "${data.kubernetes.container.name}"
+              containers.path: "/var/log/pods/*/"
+    privileged: true
+  rbac:
+    createServiceAccount: true
+    automountServiceAccountToken: true
+    createClusterRole: true
+    createClusterRoleBinding: true
+
+eric-log-transformer:
+  resources:
+    logtransformer:
+      requests:
+        cpu: 250m
+        memory: 2048Mi
+      limits:
+        cpu: 500m
+        memory: 2048Mi
+  jvmHeap: 1596m
+  config:
+    adpJson:
+      validation:
+        enabled: true
+      transformation:
+        enabled: true
+    filter: |
+      if ![type] or [type] == "filebeat"{
+        if [message] =~ /^\{.+\}$/ {
+          json {
+            source => "message"
+            skip_on_invalid_json => true
+          }
+        }
+        mutate {
+          rename => ["log", "message"]
+        }
+        # Parse nested json content, if it exists
+        if [message] =~ /^\{.+\}$/ {
+          json {
+            source => "message"
+            skip_on_invalid_json => true
+          }
+        }
+        #Mutation of HELM logs
+        mutate {
+          rename => ["M", "message" ]
+          rename => ["L", "severity" ]
+          rename => ["T", "timestamp" ]
+          rename => ["clientIP", "client_addr" ]
+          rename => ["reqID", "correlation_id" ]
+
+          rename => ["statusCode", "resp_code" ]
+          convert => {
+            "resp_code" => "string"
+          }
+
+          # Catalog Service logs
+          rename => ["Severity", "severity" ]
+          rename => ["LoggerName", "logger" ]
+          rename => ["Thread", "thread" ]
+          rename => ["full_message", "message" ]
+        }
+
+        # These services log in JSON, they don't need be parsed via grok plugin, only via JSON plugin.
+        if [kubernetes][container][name] in ["registry", "toscao"] {
+          mutate {
+            add_field => { "[@metadata][fully_parsed]" => "true" }
+          }
+        }
+
+        if [@metadata][fully_parsed] != "true" {
+          grok {
+            pattern_definitions => {
+              # If log string doesn't have data for required ADP "message" field,
+              # please, USE THIS as the last of an expression to to override logstash "message".
+              # Below in the code this empty "message" is replaced by default value.
+              "NOTHING" => '()'
+              "HTTPD_LOG_CUSTOM" => '%{IP:client_addr} %{HTTPDUSER:ident} %{HTTPDUSER:auth} \[%{HTTPDATE:request_timestamp}\] "(?:%{WORD:method} %{NOTSPACE:path}( HTTP/%{NUMBER:http_version}))" %{NUMBER:resp_code} (?:%{NUMBER:resp_size_bytes}|-)'
+              "DOCKER_REGISTRY_BASE_PATTERN" => 'time=\"%{TIMESTAMP_ISO8601:log_timestamp}\"%{SPACE}level=%{LOGLEVEL:log_severity}%{SPACE}msg=\"%{DATA:message}\"%{SPACE}go.version=%{DATA}%{SPACE}http.request.host=%{HOSTNAME:http_request_host}%{SPACE}http.request.id=%{UUID:request_id}%{SPACE}http.request.method=%{WORD:method}%{SPACE}http.request.remoteaddr=%{IP:client_addr}%{SPACE}http.request.uri=\"%{DATA:path}\"%{SPACE}http.request.useragent=\"%{DATA:user_agent}\"'
+            }
+            keep_empty_captures => true
+            overwrite => [ "message" ]
+            match => {
+              "message" => [
+                # Spring Boot logs
+                '^%{TIMESTAMP_ISO8601:log_timestamp}%{SPACE}%{LOGLEVEL:log_severity} \[%{DATA},%{DATA:correlation_id},%{DATA},%{DATA}\] %{POSINT:[metadata][proc_id]:int} --- \[%{SPACE}%{DATA:thread}\] %{NOTSPACE:logger}%{SPACE}: %{GREEDYDATA:message}$',
+                '^%{TIMESTAMP_ISO8601:log_timestamp}%{SPACE}%{LOGLEVEL:log_severity} \[%{DATA:correlation_id}\]\[%{DATA:user}\] %{POSINT:[metadata][proc_id]:int} --- \[%{SPACE}%{DATA:thread}\] %{NOTSPACE:logger}%{SPACE}: %{GREEDYDATA:message}$',
+                '^%{TIMESTAMP_ISO8601:log_timestamp}%{SPACE}%{LOGLEVEL:log_severity} %{POSINT:[metadata][proc_id]:int} --- \[%{SPACE}%{DATA:thread}\] %{NOTSPACE:logger}%{SPACE}: %{GREEDYDATA:message}$',
+                # Docker registry logs
+                '^%{HTTPD_LOG_CUSTOM}%{SPACE}\"%{DATA:http_referer_path}\"%{SPACE}\"%{DATA:user_agent}\"%{NOTHING:message}$',
+                '^%{DOCKER_REGISTRY_BASE_PATTERN}%{SPACE}http.response.contenttype=\"%{DATA:resp_content_type}\"%{SPACE}http.response.duration=%{NUMBER:resp_duration_ms:float}ms%{SPACE}http.response.status=%{NUMBER:resp_code}%{SPACE}http.response.written=%{NUMBER:resp_size_bytes}%{SPACE}$',
+                '^%{DOCKER_REGISTRY_BASE_PATTERN}%{SPACE}%{GREEDYDATA:extra_data}$',
+                # PM Server logs
+                '^level=%{LOGLEVEL:log_severity} ts=%{TIMESTAMP_ISO8601:log_timestamp} caller=%{DATA:source_file} component=%{NOTSPACE:component}( func=%{NOTSPACE:[metadata][function]})? msg="%{GREEDYDATA:message}"( %{GREEDYDATA:extra_data})?',
+                # Other Logging Formats
+                '^time=\"%{TIMESTAMP_ISO8601:log_timestamp}\" level=%{LOGLEVEL:log_severity} msg=\"%{DATA:message}\" duration=%{NUMBER:resp_duration_ms:float}ms$',
+                '^%{TIMESTAMP_ISO8601:log_timestamp} %{LOGLEVEL:log_severity} %{NOTSPACE:logger}:%{SPACE}%{GREEDYDATA:message}$'
+              ]
+            }
+          }
+        }
+        #Override "timestamp" from filebeat by timestamp from the log
+        if [log_timestamp] {
+          mutate { copy => { "log_timestamp" => "timestamp" } }
+        }
+        if [log_severity] {
+          mutate { copy => { "log_severity" => "severity" } }
+        }
+        date {
+          match => [
+            "timestamp",
+            "ISO8601", "dd/MMM/yyyy:HH:mm:ss Z", "UNIX"
+          ]
+          target => "timestamp"
+        }
+        # Add default value in ADP message if it is empty
+        if [message] == "" {
+          mutate { update => { "message" => "[event]" } }
+        }
+
+        if [service_id] == "" {
+          mutate { copy => { "[kubernetes][container][name]" => "service_id" } }
+        }
+        # Track ADP LogTransfomer config, perhaps, they will adjust mapping of these fields on their side
+        if [metadata][node_name] == "" {
+          mutate { rename => { "[kubernetes][node][name]" => "[metadata][node_name]" } }
+        }
+        if [metadata][pod_name] == "" {
+          mutate { rename => { "[kubernetes][pod][name]" => "[metadata][pod_name]" } }
+        }
+        if [metadata][pod_uid] == "" {
+          mutate { rename => { "[kubernetes][pod][uid]" => "[metadata][pod_uid]" } }
+        }
+        if [metadata][container_name] == "" {
+          mutate { rename => { "[kubernetes][container][name]" => "[metadata][container_name]" } }
+        }
+        if [metadata][namespace] == "" {
+          mutate { rename => { "[kubernetes][namespace]" => "[metadata][namespace]" } }
+        }
+        if [version] == "" {
+          mutate { add_field => { "version" => "1.0.0" } }
+        }
+
+        mutate { remove_field => [ "sequence", "@version", "time", "Time", "short_message", "level", "stream", "log_timestamp", "log_severity" ] }
+
+        #Drop message from all actuator logs
+        if [path] =~ /actuator/ {
+          drop {}
+        }
+
+        mutate { lowercase => [ "severity" ] }
+
+        translate {
+          destination => "severity"
+          override => true
+          field => "severity"
+          dictionary => {
+            "fatal"   => "critical"
+            "panic"   => "critical"
+            "warn"    => "warning"
+            "notice"  => "info"
+            "log"     => "info"
+            "trace"   => "debug"
+          }
+        }
+      }
+
+eric-data-visualizer-kb:
+  branding:
+    basePath: /log/viewer

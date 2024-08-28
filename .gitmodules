@@ -1,0 +1,4 @@
+[submodule "bob"]
+	path = bob
+	url = ../../../adp-cicd/bob
+

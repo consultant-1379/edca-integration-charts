@@ -1,0 +1,102 @@
+dependencies:
+- name: eric-pm-server
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm
+  tags:
+  - pm
+  - all
+  version: 8.1.0-15
+- name: eric-data-search-engine
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - logging
+  - all
+  version: 5.1.0+20
+- name: eric-data-search-engine-curator
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm
+  tags:
+  - logging
+  - all
+  version: 2.9.0-5
+- name: eric-log-transformer
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - logging
+  - all
+  version: 8.0.0+30
+- name: eric-log-shipper
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - logging
+  - all
+  version: 8.3.0-10
+- name: eric-data-visualizer-kb
+  repository: https://arm.seli.gic.ericsson.se/artifactory/proj-eo-drop-helm/
+  tags:
+  - logging
+  - all
+  version: 20.0.0-3
+- name: eric-data-coordinator-zk
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - drd
+  - all
+  version: 1.26.0-10
+- name: eric-oss-dmaap-kafka
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-so-gs-all-helm/
+  tags:
+  - drd
+  - all
+  version: 1.0.0-39
+- name: eric-oss-dmaap
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-so-gs-all-helm/
+  tags:
+  - drd
+  - all
+  version: 1.0.0-36
+- name: eric-edca-catalog
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-edca-drop-helm/
+  tags:
+  - catalog
+  - all
+  version: 1.0.0-214
+- name: eric-ctrl-bro
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - backup
+  - all
+  version: 3.2.0+51
+- condition: eric-data-object-storage-mn.enabled
+  name: eric-data-object-storage-mn
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-eric-data-object-storage-mn-drop-helm
+  tags:
+  - bdr
+  - all
+  version: 1.22.0-0
+- alias: eric-edca-catalog-db
+  condition: eric-edca-catalog-db.enabled
+  name: eric-data-document-database-pg
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - catalog
+  - all
+  version: 7.1.0-43
+- name: eric-sec-access-mgmt
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - idam
+  - all
+  version: 5.0.0+40
+- alias: eric-idam-database-pg
+  condition: eric-idam-database-pg.enabled
+  name: eric-data-document-database-pg
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  tags:
+  - idam
+  - all
+  version: 7.1.0-43
+- name: eric-eo-api-gateway
+  repository: https://arm.sero.gic.ericsson.se/artifactory/proj-so-gs-all-helm/
+  tags:
+  - idam
+  - all
+  version: 1.0.1-74

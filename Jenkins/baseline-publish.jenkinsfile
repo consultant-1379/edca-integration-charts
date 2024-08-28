@@ -1,0 +1,124 @@
+pipeline {
+    options {
+        disableConcurrentBuilds()
+    }
+    agent {
+        node {
+            label 'E2c_Testing_Vapp'
+        }
+    }
+    parameters {
+        string(name: 'CHART_NAME', description: 'Chart name e.g.: eric-ms-b')
+        string(name: 'CHART_REPO', description: 'Chart repo e.g.: https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-helm')
+        string(name: 'CHART_VERSION', description: 'Chart version e.g.: 1.0.0-1')
+        string(name: 'GERRIT_REFSPEC',  description: 'Gerrit Refspect of the integration chart git repo e.g.: refs/changes/87/4641487/1')
+    }
+    stages {
+        stage('Prepare') {
+            steps {
+                sh 'uname -a;whoami;echo $PATH;groups'
+                //sh 'git clean -xdff'
+                sh 'git submodule sync'
+                sh 'git submodule update --init --recursive'
+                // Ensure that Bob has all of its dependencies.
+                sh 'bob/bob --help'
+            }
+        }
+        stage('Clean') {
+            steps {
+                sh 'bob/bob clean'
+            }
+        }
+        stage('Init') {
+            steps {
+                script {
+                    if (params.GERRIT_REFSPEC != null && params.GERRIT_REFSPEC != '') {
+                        def tokens = params.GERRIT_REFSPEC.split("/")
+                        if (tokens.length == 5) {
+                            def link = '<a href="https://gerrit.ericsson.se/#/c/' + tokens[3] + '/' + tokens[4] + '">'  + tokens[3] + ',' + tokens[4] + '</a>'
+                            currentBuild.description = link
+                        } else {
+                            def link = '<a href="' + env.BUILD_NUMBER + '/console">' + params.GERRIT_REFSPEC + '</a>'
+                            currentBuild.description = link
+                        }
+                    } else {
+                        def link = '<a href="' + env.BUILD_NUMBER + '/console">' + params.CHART_NAME + ':' + params.CHART_VERSION + '</a>'
+                        currentBuild.description = link
+                    }
+                }
+                sh 'bob/bob init'
+            }
+        }
+        stage('Publish Helm Chart') {
+            steps {
+                // Generate integration helm chart
+                withCredentials([
+                                  usernamePassword(credentialsId: 'gerrit-user', usernameVariable: 'GERRIT_USERNAME', passwordVariable: 'GERRIT_PASSWORD'),
+                                  string(credentialsId: 'artifactory-api-token-id', variable: 'ARM_API_TOKEN'),
+                                  file(credentialsId: 'repository-tokens-file', variable: 'HELM_REPO_CREDENTIALS')
+                                ]) {
+                    sh './Jenkins/scripts/baseline-handler.sh publish'
+                }
+            }
+        }
+        stage('Helm Install') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'
+                sh 'bob/bob helm-install'
+              }
+        }
+        stage('Integration Test Execution') {
+            steps {
+                   catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                       sh 'cd $WORKSPACE'
+                       sh 'python3 -m robot.run -V $WORKSPACE/EDCA-Test/input.yaml --variable namespace:fem2s11-edca-integration-staging-publish --outputdir $WORKSPACE/EDCA-Test/suites EDCA-Test/suites'
+                   }
+            }
+        }
+        stage('Regression Test Execution') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'slave-user', usernameVariable: 'SLAVE_USERNAME', passwordVariable: 'SLAVE_PASSWORD')]){
+				sh 'bob/bob delete-cc-drg-namespace'
+                sh 'bob/bob deploy-cc-drg-simulator'
+                sh 'python3 -m robot.run --variable HOST:$HOSTNAME --variable USERNAME:$SLAVE_USERNAME --variable PASSWORD:$SLAVE_PASSWORD --variable NameSpace:fem2s11-edca-integration-staging-publish --outputdir $WORKSPACE/EDCA-Test/regression-tests EDCA-Test/regression-tests'
+                sh 'rebot --outputdir $WORKSPACE/EDCA-Test --output final_output.xml $WORKSPACE/EDCA-Test/suites/output.xml $WORKSPACE/EDCA-Test/regression-tests/output.xml'
+               }
+            }
+        }
+        stage('Helm-Delete') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'
+                sh 'bob/bob delete-cc-drg-namespace'
+				sh 'bob/bob deploy-cc-drg-simulator:create-cc-drg-namespaces'
+              }
+        }
+        stage('Archive artifact.properties') {
+            steps {
+                // Archive artifact.properties so Spinnaker can read the parameters
+                archiveArtifacts 'artifact.properties'
+            }
+        }
+    }
+    post {
+        always {
+            //cleanWs()
+                       script {
+                          step(
+                                    [
+                                      $class              : 'RobotPublisher',
+                                      outputPath          : '/home/lciadm100/jenkins/workspace/edca-integration-staging-publish/EDCA-Test',
+                                      outputFileName      : 'final_output.xml',
+                                      reportFileName      : 'report.html',
+                                      logFileName         : 'log.html',
+                                      passThreshold       : 90,
+                                      unstableThreshold   : 60,
+                                      disableArchiveOutput: false,
+                                      otherFiles          : "**/*.png,**/*.jpg",
+                                    ]
+                               )
+                        }
+        }
+    }
+}

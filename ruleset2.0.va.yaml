@@ -1,0 +1,255 @@
+modelVersion: 2.0
+
+description: "EDCA Integration VA Execution"
+
+docker-images:
+  - trivy-inline-scan: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/trivy-inline-scan:latest
+  - anchore-inline-scan: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/anchore-inline-scan:latest
+  - k8-test: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-py3kubehelmbuilder:latest
+  - adp-release-auto: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-adp-release-auto:latest
+
+# List of constants
+properties:
+  - pm-server-to-scan: armdocker.rnd.ericsson.se/proj-common-assets-cd/monitoring/pm/eric-pm-server:5.1.0-17
+  - search-engine-curator-to-scan: armdocker.rnd.ericsson.se/proj-adp-log-drop/eric-data-search-engine-curator:2.3.0-38
+  - log-transformer-to-scan: armdocker.rnd.ericsson.se/proj-bssf/adp-log/rc/eric-log-transformer:5.5.0-3
+  - log-shipper-to-scan: armdocker.rnd.ericsson.se/proj-bssf/adp-log/rc/eric-log-shipper:5.3.0-2
+  - data-coordinator-zk-to-scan: armdocker.rnd.ericsson.se/proj-adp-eric-data-dc-zk-drop/eric-data-coordinator-zk:1.14.0-37
+  - kafka-to-scan: armdocker.rnd.ericsson.se/proj-orchestration-so/eric-oss-dmaap-kafka:1.0.0-39
+  - dmaap-to-scan: armdocker.rnd.ericsson.se/proj-orchestration-so/eric-oss-dmaap:1.0.0-36
+  - catalog-to-scan: armdocker.rnd.ericsson.se/proj-edca-catalog-service/eric-edca-catalog:1.0.0-171
+  - database-pg-to-scan: armdocker.rnd.ericsson.se/proj-document-database-pg/data/eric-data-document-database-pg:5.4.0-62
+  - api-gateway-to-scan: armdocker.rnd.ericsson.se/proj-orchestration-so/eric-eo-api-gateway:1.0.1-74
+  - trivy-image: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/trivy-inline-scan:latest
+  - anchore-image: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/anchore-inline-scan:latest
+  - config-file: ci-config/Vulnerability_Report.config # templated configuration file
+ 
+# Import environment variables
+env:
+  - PWD
+  - KUBECONFIG (default=/tmp/admin.conf)
+  - DOCKER_USERNAME
+  - DOCKER_PASSWORD
+  - HELM_TOKEN
+  - HELM_USER (default=enmadm100)
+  - ENABLE_HELM_V3 (default=true)
+
+var:
+ - cicd-namespace
+ 
+# Rules to execute
+rules:
+
+  # Run Nmap port scan test using TCP,UDP, and SCTP protocols
+  nmap-port-scan:
+    - task: nmap-port-scan
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=/tmp/admin.conf"
+        - "--volume ${env.KUBECONFIG}:/tmp/admin.conf:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd:
+        - test.py --helm-v3 --kubernetes-admin-conf=/tmp/admin.conf
+          --helm-user=${env.HELM_USER}
+          --arm-api-token=${env.HELM_TOKEN}
+          --kubernetes-namespace=${var.cicd-namespace}
+          --nmap-test
+          --nmap-config-file='nmap/nmap_config_all_protocols.yaml'
+          --kube-exec-timeout=1800
+
+  zap-scan:
+    - task: system-test-with-vulnerability-check
+      docker-image: k8-test
+      docker-flags:
+        - "--env KUBECONFIG=${env.KUBECONFIG}"
+        - "--volume ${env.KUBECONFIG}:${env.KUBECONFIG}:ro"
+        - "--volume ${env.PWD}:${env.PWD}"
+      cmd: /test.py --kubernetes-admin-conf=${env.KUBECONFIG}
+           --helm-user=${env.HELM_USER}
+           --arm-api-token=${env.HELM_TOKEN}
+           --kubernetes-namespace=${var.cicd-namespace}
+           --only-zap-test
+           --zap-config=zap/zap_config.yaml
+           
+  anchore-inline-scan:
+    - task: pm-server-image
+      cmd: docker pull ${pm-server-to-scan}
+    - task: search-engine-curator-image
+      cmd: docker pull ${search-engine-curator-to-scan}
+    - task: log-transformer-image
+      cmd: docker pull ${log-transformer-to-scan}
+    - task: log-shipper-image
+      cmd: docker pull ${log-shipper-to-scan}
+    - task: data-coordinator-zk-image
+      cmd: docker pull ${data-coordinator-zk-to-scan}
+    - task: kafka-image
+      cmd: docker pull ${kafka-to-scan}
+    - task: dmaap-image
+      cmd: docker pull ${dmaap-to-scan}
+    - task: catalog-image
+      cmd: docker pull ${catalog-to-scan}
+    - task: database-pg-image
+      cmd: docker pull ${database-pg-to-scan}
+      cmd: docker pull ${api-gateway-to-scan}
+    - task: anchore-inline-scan
+      docker-image: anchore-inline-scan
+      docker-in-docker: socket
+      cmd: scan ${api-gateway-to-scan} ${catalog-to-scan} ${database-pg-to-scan} ${dmaap-to-scan} ${kafka-to-scan} ${data-coordinator-zk-to-scan} ${log-shipper-to-scan} ${log-transformer-to-scan} ${search-engine-curator-to-scan} ${pm-server-to-scan}
+      
+  trivy-inline-scan:
+    - task: pm-server-fetch-image
+      cmd:
+      - "docker pull ${pm-server-to-scan}"
+      - mkdir -p build/trivy-reports
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${pm-server-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/pm-server.report.json ${pm-server-to-scan}
+    - task: search-engine-curator-fetch-image
+      cmd:
+      - "docker pull ${search-engine-curator-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${search-engine-curator-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/search-engine-curator.report.json ${search-engine-curator-to-scan}
+    - task: log-transformer-fetch-image
+      cmd:
+      - "docker pull ${log-transformer-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${log-transformer-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/log-transformer.report.json ${log-transformer-to-scan}
+    - task: log-shipper-fetch-image
+      cmd:
+      - "docker pull ${log-shipper-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${log-shipper-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/log-shipper.report.json ${log-shipper-to-scan}
+    - task: data-coordinator-zk-fetch-image
+      cmd:
+      - "docker pull ${data-coordinator-zk-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${data-coordinator-zk-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/data-coordinator.report.json ${data-coordinator-zk-to-scan}
+    - task: kafka-fetch-image
+      cmd:
+      - "docker pull ${kafka-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${kafka-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/kafka.report.json ${kafka-to-scan}
+    - task: dmaap-fetch-image
+      cmd:
+      - "docker pull ${dmaap-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${dmaap-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/dmaap.report.json ${dmaap-to-scan}
+    - task: catalog-fetch-image
+      cmd:
+      - "docker pull ${catalog-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${catalog-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/catalog.report.json ${catalog-to-scan}
+    - task: database-pg-fetch-image
+      cmd:
+      - "docker pull ${database-pg-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${database-pg-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/database-pg.report.json ${database-pg-to-scan}
+    - task: search-engine-fetch-image
+      cmd:
+      - "docker pull ${search-engine-to-scan}"
+    # Scan an image and print result to console
+      cmd:
+      - "docker pull ${api-gateway-to-scan}"
+    # Scan an image and print result to console
+    - task: trivy-inline-scan-console-report-search-engine
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: ${api-gateway-to-scan}
+    # Scan an image and save result to json
+    - task: trivy-inline-scan-json-report
+      docker-image: trivy-inline-scan
+      docker-in-docker: socket
+      cmd: --format json --output build/trivy-reports/api-gateway.report.json ${api-gateway-to-scan}
+
+  cleanup-anchore-trivy-images:
+    - task: clean-images
+      cmd:
+      - "docker image rm -f ${anchore-image}"
+      - "docker image rm -f ${trivy-image}"
+      - "docker image rm -f ${api-gateway-to-scan}"
+      - "docker image rm -f ${catalog-to-scan}"
+      - "docker image rm -f ${database-pg-to-scan}"
+      - "docker image rm -f ${dmaap-to-scan}"
+      - "docker image rm -f ${kafka-to-scan}"
+      - "docker image rm -f ${data-coordinator-zk-to-scan}"
+      - "docker image rm -f ${log-shipper-to-scan}"
+      - "docker image rm -f ${log-transformer-to-scan}"
+      - "docker image rm -f ${search-engine-curator-to-scan}"
+      - "docker image rm -f ${pm-server-to-scan}"
+  
+  va-report:
+    - task: fetch_vulnerability
+      docker-image: adp-release-auto
+      cmd: va-report --config ${env.PWD}/${config-file} --md --debug --output Vulnerability_Report.md --nmap-reports nmap_reports/nmap_report --zap-reports zap/reports  --trivy-reports build/trivy-reports --anchore-reports anchore-reports
+      

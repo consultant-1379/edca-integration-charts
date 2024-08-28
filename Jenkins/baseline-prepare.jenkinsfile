@@ -1,0 +1,60 @@
+pipeline {
+    options {
+        disableConcurrentBuilds()
+    }
+    agent {
+        node {
+            label 'E2c_Testing_Vapp'
+        }
+    }
+    parameters {
+        string(name: 'CHART_NAME', description: 'Chart name e.g.: eric-ms-b')
+        string(name: 'CHART_REPO', description: 'Chart repo e.g.: https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-helm')
+        string(name: 'CHART_VERSION', description: 'Chart version e.g.: 1.0.0-1')
+        string(name: 'GERRIT_REFSPEC',  description: 'Gerrit Refspect of the integration chart git repo e.g.: refs/changes/87/4641487/1')
+    }
+    stages {
+        stage('Init') {
+            steps {
+                script {
+                    if (params.GERRIT_REFSPEC != null && params.GERRIT_REFSPEC != '') {
+                        def tokens = params.GERRIT_REFSPEC.split("/")
+                        if (tokens.length == 5) {
+                            def link = '<a href="https://gerrit.ericsson.se/#/c/' + tokens[3] + '/' + tokens[4] + '">'  + tokens[3] + ',' + tokens[4] + '</a>'
+                            currentBuild.description = link
+                        } else {
+                            def link = '<a href="' + env.BUILD_NUMBER + '/console">' + params.GERRIT_REFSPEC + '</a>'
+                            currentBuild.description = link
+                        }
+                    } else {
+                        def link = '<a href="' + env.BUILD_NUMBER + '/console">' + params.CHART_NAME + ':' + params.CHART_VERSION + '</a>'
+                        currentBuild.description = link
+                    }
+                }
+            }
+        }
+        stage('Prepare Helm Chart') {
+            steps {
+                // Generate integration helm chart
+                withCredentials([
+                                  usernamePassword(credentialsId: 'gerrit-user', usernameVariable: 'GERRIT_USERNAME', passwordVariable: 'GERRIT_PASSWORD'),
+                                  string(credentialsId: 'artifactory-api-token-id', variable: 'ARM_API_TOKEN'),
+                                  file(credentialsId: 'repository-tokens-file', variable: 'HELM_REPO_CREDENTIALS')
+								]) {
+                    sh './Jenkins/scripts/baseline-handler.sh prepare'
+                }
+            }
+        }
+        stage('Archive artifact.properties') {
+            steps {
+                // Archive artifact.properties so Spinnaker can read the parameters
+                archiveArtifacts 'artifact.properties'
+            }
+        }
+    }
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}

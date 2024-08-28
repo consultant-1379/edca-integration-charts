@@ -1,0 +1,79 @@
+pipeline {
+    agent {
+        node {
+            label 'E2c_Testing_Vapp'
+        }
+    }
+    stages {
+        stage('Prepare') {
+            steps {
+                /*
+                   Snippet generated from a manual configuration based on the ADP howto:
+                   https://confluence.lmera.ericsson.se/pages/viewpage.action?spaceKey=ACD&title=How+to+checkout+sub-modules+in+Jenkins+Pipeline
+                   More about snippet generation:
+                   https://www.jenkins.io/doc/book/pipeline/getting-started/#snippet-generator
+                   ${YOUR_JENKINS_URL}/pipeline-syntax
+                */
+                sh 'uname -a;whoami;echo $PATH;groups'
+                sh 'git clean -xdff'
+                sh 'git submodule sync'
+                sh 'git submodule update --init --recursive'
+                // Ensure that Bob has all of its dependencies.
+                /* End of generated snippet */
+                sh 'bob/bob --help'
+            }
+        }
+        stage('Clean') {
+            steps {
+                sh 'bob/bob clean'
+            }
+        }
+        stage('Init') {
+            steps {
+                sh 'bob/bob init'
+                //archiveArtifacts 'artifact.properties'
+            }
+        }
+        stage('Helm-Upgrade') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'
+                sh 'bob/bob helm-upgrade'
+              }
+        }
+        stage('Integration Test Execution') {
+            steps {
+                   catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                       sh 'cd $WORKSPACE'
+                       sh 'python3 -m robot.run -V $WORKSPACE/EDCA-Test/input.yaml --variable namespace:fem2s11-edca-integration-upgrade --outputdir $WORKSPACE/EDCA-Test EDCA-Test/suites'
+                   }
+            }
+        }
+        stage('Helm-Delete') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'
+              }
+        }
+    }
+    post {
+        always {
+            //cleanWs()
+                       script {
+                          step(
+                                    [
+                                      $class              : 'RobotPublisher',
+                                      outputPath          : '/home/lciadm100/jenkins/workspace/edca-integration-upgrade/EDCA-Test',
+                                      outputFileName      : 'output.xml',
+                                      reportFileName      : 'report.html',
+                                      logFileName         : 'log.html',
+                                      passThreshold       : 90,
+                                      unstableThreshold   : 60,
+                                      disableArchiveOutput: false,
+                                      otherFiles          : "**/*.png,**/*.jpg",
+                                    ]
+                               )
+                        }
+        }
+    }
+}

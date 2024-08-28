@@ -1,0 +1,80 @@
+pipeline {
+    agent {
+        node {
+            label 'E2c_Testing_Vapp'
+        }
+    }
+    stages {
+        stage('Prepare') {
+            steps {
+                sh 'uname -a;whoami;echo $PATH;groups'
+                //sh 'git clean -xdff'
+                sh 'git submodule sync'
+                sh 'git submodule update --init --recursive'
+                // Ensure that Bob has all of its dependencies.
+                sh 'bob/bob --help'
+            }
+        }
+        stage('Clean') {
+            steps {
+                sh 'bob/bob clean'
+            }
+        }
+        stage('Init') {
+            steps {
+                sh 'bob/bob init'
+            }
+        }
+        stage('Lint') {
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    sh 'bob/bob lint:helm lint:helm-chart-check'
+                }
+            }
+        }
+        stage('Prepare Helm Chart') {
+            steps {
+                script {
+                    // Generate integration helm chart
+                    withCredentials([
+                                      usernamePassword(credentialsId: 'gerrit-user', usernameVariable: 'GERRIT_USERNAME', passwordVariable: 'GERRIT_PASSWORD'),
+                                      string(credentialsId: 'artifactory-api-token-id', variable: 'ARM_API_TOKEN'),
+                                      file(credentialsId: 'repository-tokens-file', variable: 'HELM_REPO_CREDENTIALS')
+                                    ]) {
+                        env.UPLOAD_INTERNAL = 'false'
+                        sh './Jenkins/scripts/baseline-handler.sh prepare'
+                    }
+                }
+            }
+        }
+        stage('Helm Install') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'
+                sh 'bob/bob helm-install'
+              }
+        }
+        stage('Kubernetes Test') {
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    sh 'cd $WORKSPACE'
+                    sh 'python3 EDCA-Test/kube-test/kubernetes_robot_gen.py EDCA-Test/kube-test/input.yaml EDCA-Test/kube-test/test.robot'
+                    sh 'python3 -m robot.run --outputdir $WORKSPACE/EDCA-Test/kube-test/ EDCA-Test/kube-test/'
+                }
+            }
+        }
+        stage('Helm Delete') {
+            steps {
+                sh 'bob/bob delete-namespace'
+                sh 'bob/bob create-namespace'                
+              }
+        }
+    }
+    post {
+        always {
+		    archiveArtifacts 'artifact.properties'
+            archiveArtifacts '.bob/design*.*'
+            cleanWs()
+        }
+    }
+}

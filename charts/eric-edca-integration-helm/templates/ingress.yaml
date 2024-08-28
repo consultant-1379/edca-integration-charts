@@ -1,0 +1,74 @@
+{{- if .Values.ingress.enabled -}}
+{{- $isApiNetworkingV1 := .Capabilities.APIVersions.Has "networking.k8s.io/v1/Ingress" }}
+{{- if $isApiNetworkingV1 }}
+apiVersion: networking.k8s.io/v1
+{{- else }}
+apiVersion: networking.k8s.io/v1beta1
+{{- end }}
+kind: Ingress
+metadata:
+  name: {{ template "eric-edca-integration-helm.name" . }}
+  labels:
+  {{- include "eric-edca-integration-helm.kubernetes-io-info" .| nindent 4 }}
+  annotations:
+{{- if .Values.ingress.ingressClass }}
+    kubernetes.io/ingress.class: {{.Values.ingress.ingressClass }}
+{{- end }}
+{{- include "eric-edca-integration-helm.helm-annotations" .| nindent 4 }}
+{{- if .Values.ingress.annotations }}
+{{- toYaml .Values.ingress.annotations | nindent 4 }}
+{{- end }}
+spec:
+{{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ template "eric-edca-integration-helm.ingressHostname" . }}
+      secretName: {{ template "eric-edca-integration-helm.ingressTLSSecret" . }}
+{{- end }}
+  rules:
+  - host: {{ template "eric-edca-integration-helm.ingressHostname" . }}
+    http:
+      paths:
+      {{- if .Values.tags.idam }}
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: eric-eo-api-gateway
+            port: 
+              number: 80
+      {{- else }}
+      - path: /topics
+        pathType: Prefix
+        backend:
+          service:
+            name: eric-oss-dmaap
+            port: 
+              number: 3904
+      - path: /events
+        pathType: Prefix
+        backend:
+          service:
+            name: eric-oss-dmaap
+            port:
+              number: 3904
+      {{- if .Values.tags.pm }}
+      - path: /metrics/viewer
+        pathType: Prefix
+        backend:
+          service:
+            name: eric-pm-server
+            port: 
+              number: 9090
+      {{- end }}
+      {{- if .Values.tags.logging }}
+      - path: /log/viewer
+        pathType: Prefix
+        backend:
+          service:
+            name: eric-data-visualizer-kb
+            port: 
+              number: 80
+      {{- end }}
+      {{- end }}
+{{- end -}}
